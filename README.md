@@ -17,19 +17,9 @@ This program simulates a **content-based** music recommender: it represents each
 
 ## How The System Works
 
-Explain your design in plain language.
+Real music recommenders (Spotify, YouTube, etc.) build a profile of *input data* about each song — genre, mood, tempo, energy — and a separate profile of *user preferences*, usually inferred from listening history (what you've played, skipped, liked, or saved). They then use that history two ways: **collaborative filtering** compares you to *other users* with similar taste ("people who liked what you liked also liked this"), and **content-based filtering** compares songs to *your own past taste* using their raw attributes. A final *ranking/selection* step scores and sorts every candidate song and returns only the top few — the input data and preferences feed the score, but the score is what actually decides what you see.
 
-Some prompts to answer:
-
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
-
-You can include a simple diagram or bullet list if helpful.
-
-Real platforms like Spotify use two approaches: comparing you to *other users* (collaborative filtering), or comparing songs to *your own past taste* (content-based filtering). This simulation only has one user to work with, so it's content-based — it just compares each song's attributes to what that one user says they like.
+This simulation only has one user to work with (no listening history, no other users to compare against), so it's purely content-based — it just compares each song's attributes to what that one user *says* they like, instead of inferring it from behavior.
 
 **`Song` features used:** `genre`, `mood`, `energy`, `tempo_bpm`, `valence`, `danceability`, and `acousticness`
 
@@ -251,15 +241,12 @@ This surfaced a real edge case: since no song can have `energy` above `1.0`, `ab
 
 ## Limitations and Risks
 
-Summarize some limitations of your recommender.
+- It only works on a tiny catalog (18 songs), so it can't represent most of musical taste.
+- It does not understand lyrics, language, artist popularity, or actual listening history.
+- It over-favors whichever genres happen to have more songs in the catalog (lofi, pop) — see the model card for the full bias writeup.
+- It treats genre and mood as exact text matches, so close-but-not-identical tastes (e.g. "pop" vs "indie pop") get no partial credit.
 
-Examples:
-
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
-
-You will go deeper on this in your model card.
+See [`model_card.md`](model_card.md) for a deeper breakdown of bias and improvement ideas.
 
 ---
 
@@ -269,10 +256,7 @@ Read and complete `model_card.md`:
 
 [**Model Card**](model_card.md)
 
-Write 1 to 2 paragraphs here about what you learned:
+Building this showed me that a recommender is really just a scoring rule wearing a friendly interface — every "recommendation" is a number, sorted. That made it obvious how directly the *weights* you pick (genre worth +2.0, mood worth +1.0, energy worth up to +1.5) decide what a user sees, before any song content even matters.
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
-
-
+It also showed me where bias sneaks in without anyone writing biased code: our catalog just happens to have more lofi and pop songs than anything else, so those listeners get better, more varied recommendations for free, while a rock or classical fan gets one strong match and four compromises. The math was fair; the data wasn't. That's made me a lot more skeptical of "neutral" algorithms in real apps like Spotify — an even-handed formula can still produce very uneven outcomes if it's trained on uneven data.
 
