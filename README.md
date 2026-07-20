@@ -119,11 +119,133 @@ Top Recommendations
 
 ## Experiments You Tried
 
-Use this section to document the experiments you ran. For example:
+To stress-test the scoring logic, `src/main.py` runs six user profiles against the catalog: three distinct "normal" tastes, and three adversarial/edge-case profiles designed to see whether the scoring rule breaks or produces surprising results.
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+### Distinct taste profiles
+
+**High-Energy Pop** — `{genre: pop, mood: happy, energy: 0.9}`
+
+```
+1. Sunrise City by Neon Echo - Score: 4.26
+   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.26)
+
+2. Gym Hero by Max Pulse - Score: 3.41
+   Because: genre match (+2.0), energy similarity (+1.41)
+
+3. Rooftop Lights by Indigo Parade - Score: 2.08
+   Because: mood match (+1.0), energy similarity (+1.08)
+
+4. Storm Runner by Voltline - Score: 1.47
+   Because: energy similarity (+1.47)
+
+5. Neon Afterglow by Pixel Harbor - Score: 1.44
+   Because: energy similarity (+1.44)
+```
+
+**Chill Lofi** — `{genre: lofi, mood: chill, energy: 0.3}`
+
+```
+1. Library Rain by Paper Lanterns - Score: 4.35
+   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.35)
+
+2. Midnight Coding by LoRoom - Score: 4.14
+   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.14)
+
+3. Focus Flow by LoRoom - Score: 3.20
+   Because: genre match (+2.0), energy similarity (+1.20)
+
+4. Spacewalk Thoughts by Orbit Bloom - Score: 2.44
+   Because: mood match (+1.0), energy similarity (+1.44)
+
+5. Golden Hour Waltz by Marina Vale - Score: 1.47
+   Because: energy similarity (+1.47)
+```
+
+**Why "Library Rain" ranked #1:** with the current weights in `recommender.py` (`+2.0` genre match, `+1.0` mood match, and `energy_bonus = 1.5 * max(0, 1 - abs(song.energy - target_energy) / 0.5)`), the maximum a song can score against this profile is `2.0 + 1.0 + 1.5 = 4.5` — a perfect `lofi`/`chill` song with `energy` exactly `0.3`. "Library Rain" (`lofi`, `chill`, `energy: 0.35`) hits both categorical matches and lands only `0.05` away from the target energy, earning `1.5 * (1 - 0.05/0.5) = 1.35` and a total of `4.35`, the closest any song gets to that ceiling. "Midnight Coding" (`lofi`, `chill`, `energy: 0.42`) matches the same two categories but sits `0.12` away from the target, so its energy bonus drops to `1.14`, putting it `0.21` points behind. "Focus Flow" only matches genre (its mood is `focused`, not `chill`), so it loses the full `+1.0` mood term and falls to third despite decent energy alignment. In other words, the ranking rewards songs that satisfy *all three* signals at once, and among ties on genre+mood, the energy-similarity term (worth up to `1.5`, more than either single categorical match) acts as the tiebreaker — which is exactly why the top two spots are both genuinely chill, low-energy lofi tracks rather than songs that merely match on one attribute.
+
+**Deep Intense Rock** — `{genre: rock, mood: intense, energy: 0.9}`
+
+```
+1. Storm Runner by Voltline - Score: 4.47
+   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.47)
+
+2. Gym Hero by Max Pulse - Score: 2.41
+   Because: mood match (+1.0), energy similarity (+1.41)
+
+3. Neon Afterglow by Pixel Harbor - Score: 1.44
+   Because: energy similarity (+1.44)
+
+4. Firelight Parade by Brass Meridian - Score: 1.32
+   Because: energy similarity (+1.32)
+
+5. Sunrise City by Neon Echo - Score: 1.26
+   Because: energy similarity (+1.26)
+```
+
+### Adversarial / edge-case profiles
+
+**Conflicting Signals** — `{genre: rock, mood: chill, energy: 0.9}` (rock genre paired with a chill mood, plus a high target energy — internally contradictory taste)
+
+```
+1. Storm Runner by Voltline - Score: 3.47
+   Because: genre match (+2.0), energy similarity (+1.47)
+
+2. Neon Afterglow by Pixel Harbor - Score: 1.44
+   Because: energy similarity (+1.44)
+
+3. Gym Hero by Max Pulse - Score: 1.41
+   Because: energy similarity (+1.41)
+
+4. Firelight Parade by Brass Meridian - Score: 1.32
+   Because: energy similarity (+1.32)
+
+5. Sunrise City by Neon Echo - Score: 1.26
+   Because: energy similarity (+1.26)
+```
+
+The scorer didn't break — it just fell back to the genre and energy terms since no song is both `rock` and `chill`. The winner (Storm Runner) is a rock/intense song, which is a reasonable resolution of the conflict but shows the mood preference was effectively ignored.
+
+**Nonexistent Genre/Mood** — `{genre: vaporwave, mood: euphoric, energy: 0.5}` (values that don't exist anywhere in the catalog)
+
+```
+1. Winter Orchard by The Cedar State - Score: 1.47
+   Because: energy similarity (+1.47)
+
+2. Velvet Skyline by Solstice Choir - Score: 1.32
+   Because: energy similarity (+1.32)
+
+3. Blue Canyon by Willow Reed - Score: 1.26
+   Because: energy similarity (+1.26)
+
+4. Midnight Coding by LoRoom - Score: 1.26
+   Because: energy similarity (+1.26)
+
+5. Focus Flow by LoRoom - Score: 1.20
+   Because: energy similarity (+1.20)
+```
+
+No errors or crashes — the scorer just degrades gracefully to energy-only matching since `==` comparisons against genre/mood strings that never appear simply never award points. The recommendations end up genre-agnostic, which is the expected (if unsatisfying) behavior for a taste the catalog can't represent.
+
+**Out-of-Range Energy** — `{genre: pop, mood: happy, energy: 1.5}` (energy above the valid `0.0-1.0` range)
+
+```
+1. Sunrise City by Neon Echo - Score: 3.00
+   Because: genre match (+2.0), mood match (+1.0)
+
+2. Gym Hero by Max Pulse - Score: 2.00
+   Because: genre match (+2.0)
+
+3. Rooftop Lights by Indigo Parade - Score: 1.00
+   Because: mood match (+1.0)
+
+4. Midnight Coding by LoRoom - Score: 0.00
+   Because:
+
+5. Storm Runner by Voltline - Score: 0.00
+   Because:
+```
+
+This surfaced a real edge case: since no song can have `energy` above `1.0`, `abs(song.energy - 1.5)` is always `>= 0.5`, so `energy_bonus` clamps to `0` for every song — the energy term silently disappears from the score entirely. The ranking still "works" (it falls back to genre/mood matches), but a user who mistakenly submits an out-of-range value gets no feedback that their energy preference was ignored. This suggests `score_song` should validate/clamp `target_energy` to `[0, 1]` rather than silently zeroing out the term.
 
 ---
 
