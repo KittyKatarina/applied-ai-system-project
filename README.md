@@ -31,19 +31,27 @@ You can include a simple diagram or bullet list if helpful.
 
 Real platforms like Spotify use two approaches: comparing you to *other users* (collaborative filtering), or comparing songs to *your own past taste* (content-based filtering). This simulation only has one user to work with, so it's content-based — it just compares each song's attributes to what that one user says they like.
 
-**`Song` features used:** `genre`, `mood`, `energy`, `tempo_bpm`, `valence`, `danceability`, `acousticness`
+**`Song` features used:** `genre`, `mood`, `energy`, `tempo_bpm`, `valence`, `danceability`, and `acousticness`
 
-**`UserProfile` stores:** `favorite_genre`, `favorite_mood`, `target_energy`, `likes_acoustic`
+**`UserProfile` stores:** `favorite_genre`, `favorite_mood`, `target_energy`, and `likes_acoustic`
 
-**How scoring works:** genre and mood each give a small bonus if they match the user's favorite. Energy is scored by how *close* it is to the user's target, not by how high it is:
+**Algorithm Recipe:** each song is scored by how closely it matches the user's stated taste profile. The final recipe is:
 
+- **+2.0 points** if the song's `genre` matches the user's `favorite_genre`
+- **+1.0 point** if the song's `mood` matches the user's `favorite_mood`
+- **Energy similarity bonus:** add points based on how close the song's `energy` is to the user's `target_energy`
+  - Example formula: `energy_bonus = 1.5 * max(0, 1 - abs(song.energy - user.target_energy) / 0.5)`
+- **Acoustic bonus:** if the user likes acoustic tracks and the song has high `acousticness`, add a small bonus such as **+0.5**
+
+The total score is:
+
+```text
+score = genre_match + mood_match + energy_bonus + acoustic_bonus
 ```
-energy_score = 1 - abs(song.energy - user.target_energy)
-```
 
-Genre counts for a bit more than mood, since mood is already roughly reflected in energy/valence, while genre isn't.
+After all songs are scored, the recommender sorts them from highest to lowest score and returns the top `k` results.
 
-**How songs are chosen:** every song gets a score, then they're sorted and the top `k` are returned.
+**Bias note:** this system may over-prioritize genre and under-value songs that are excellent matches for the user's mood or energy but happen to use a different genre. It also relies on a very simple profile, so it may miss more nuanced preferences.
 
 ---
 
