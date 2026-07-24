@@ -80,6 +80,8 @@ Net result: how good your recommendations are depends more on how common your ta
 
 ## 7. Evaluation  
 
+I felt the AI was a very strong tool and could do so many things. On top of this, it's able to answer many questions that you may have, all making it very desirable when working. The AI can be flawed in the fact that it has to be watched so closely, but the drawback is worth having such a strong tool and coding assistant.
+
 We tested 6 fake users: 3 normal profiles (**High-Energy Pop**, **Chill Lofi**, **Deep Intense Rock**) and 3 "break it on purpose" profiles (**conflicting preferences**, a **made-up genre/mood**, and an **energy value above 1.0**).
 
 For the normal profiles, the #1 song always looked right — a real match on genre, mood, and energy.
@@ -108,10 +110,37 @@ Add more songs, especially to genres that only have 1 song right now, so recomme
 
 ---
 
-## 9. Personal Reflection  
+## 9. Testing Summary
+
+> **In short:** 6/6 automated tests pass, including a reliability check where the trained model agreed with the original scoring formula's #1 pick in 49/50 (98%) of randomly sampled taste profiles — the 1 disagreement was a near-miss genre/mood case, which is exactly the behavior the model was built to improve on. The energy-clamping and model-load-failure guardrails were both verified by deliberately triggering them, not just by inspection.
+
+**What worked:**
+
+- The automated test suite (`pytest`, `tests/test_recommender.py`) has 6 tests: ranking order, non-empty explanations, partial credit for a similar-but-not-identical genre ("indie pop" vs. "pop"), energy values outside `[0, 1]` no longer zeroing the score, the system's behavior when the trained model is unavailable (simulated by monkeypatching the model loader), and a **reliability/agreement check** — 50 randomly generated taste profiles (fixed random seed for reproducibility) are scored twice, once with the trained model and once with the model forced off, comparing the #1 recommendation each time. They agreed on 49/50 (98%) profiles; the 1 disagreement involved a near-miss genre where the model correctly gave partial credit and the formula gave none — confirming the model diverges from the original rule exactly where it's supposed to, not randomly. All 6 tests pass.
+- End-to-end manual verification: running `python -m src.train_model` produced sane training logs (sample count, a validation MAE around `0.04`, and learned coefficients that closely matched the original hand-picked weights — good evidence the model actually learned the intended policy instead of something unrelated). Running `python -m src.main` afterward produced correct, sensible rankings for all 6 test profiles.
+- A manual "break the fallback on purpose" drill: temporarily renaming `models/taste_match_model.joblib` and rerunning `python -m src.main` confirmed the system logs a clear error, logs a fallback warning, and still returns correct rankings using the original formula — no crash, no silent failure.
+
+**What didn't work (at first):**
+
+- `tests/test_recommender.py` originally only exercised the OOP `Recommender` class, which was a `# TODO` stub returning placeholder values. Those tests were technically passing while validating nothing real — a stub can pass a shallow test just as easily as a correct implementation can. This was easy to miss without reading past the test file into the implementation it was calling.
+- There was evidence (orphaned compiled bytecode with no matching source files) of an earlier, unfinished attempt at a full LLM/RAG integration that never got committed. That's a sign the original approach was scoped much bigger than the assignment actually needed, and it had to be abandoned rather than fixed.
+
+**What we learned:**
+
+- A passing test suite isn't proof of a working system if the tests were written against a stub — it's worth periodically asking "what would make this test pass even if the feature were broken?"
+- Testing the failure/fallback path mattered as much as testing the happy path. The clearest evidence that the safety net actually worked wasn't a green checkmark, it was deliberately breaking the model file and watching the system recover instead of crash.
+- Watching the actual console output change (old formula's scores vs. the new model's scores, for the exact same profiles) was more convincing evidence that the fixes worked than the unit tests alone — automated tests and manual end-to-end checks caught different kinds of problems.
+
+---
+
+## 10. Personal Reflection  
+
+I learned that its very important to watch the AI carefully. I had an iteration where the AI was trying to import an entire LLM but my goal was nowhere near that complex. I had to rewind the changes and rewrite my prompt better. Other than that, its a very strong tool to be used very carefully. You cannot rely on it every step of the way, but you should definitely find a way to take advantage of such a powerful tool.
 
 Building this showed me that a recommender is really just a scoring rule with a friendly interface.
 
 The surprising part was how easily bias creeps in — not from bad code, but from an uneven dataset. The math was fair; the data wasn't.
 
 This changed how I think about real apps like Spotify: even a completely "neutral" formula can quietly favor whatever music is most common in its training data, and the people with less-common taste get worse recommendations through no fault of the algorithm itself.
+
+**On problem-solving specifically:** the most useful move in this whole project wasn't writing code, it was noticing when the *scope* of a solution didn't match the *size* of the problem — catching that an LLM/RAG rebuild was overkill for "give partial credit to similar genre strings" and re-scoping down to a small local model instead. The second most useful move was breaking the problem into a sequence of checkpoints I could verify independently (train the model → check its logs → run the CLI → diff the output against the old behavior → break the fallback on purpose → confirm recovery) rather than writing everything at once and hoping it worked. Bugs like the energy-clamping issue weren't found by staring at the formula — they were found by deliberately trying to break the system with adversarial inputs and reading the actual output closely. That's probably the biggest transferable lesson: most real bugs surface from testing the edges of a system, not its middle.

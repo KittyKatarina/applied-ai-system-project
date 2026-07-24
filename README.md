@@ -1,276 +1,174 @@
-# 🎵 Music Recommender Simulation
+# 🎵 Music Recommender — with a Trained Taste-Match Model
 
-## Project Summary
+> **Originally:** *Module 3 Music Recommender Simulation* — a classroom assignment (AI110) to build and explain a small content-based music recommender: represent songs and a listener's taste profile as data, design a scoring rule that turns that data into ranked recommendations, and reflect on where the system gets things right or wrong. The original version scored songs entirely with hand-picked constants (exact genre/mood match, a fixed energy-similarity formula) — no learning involved.
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
-This program simulates a **content-based** music recommender: it represents each song as a set of attributes (genre, mood, energy, tempo, valence, danceability, acousticness) and represents a listener as a `UserProfile` of preferences (favorite genre, favorite mood, target energy, whether they like acoustic tracks). The `Recommender` scores every song by how closely its attributes match the user's profile, ranks the results, and returns the top `k` matches with an explanation for each pick — mirroring the "attribute-matching" half of how real platforms like Spotify recommend music (the other half, collaborative filtering based on other listeners' behavior, is out of scope here since the simulation only models a single user's taste).
+This repository extends that assignment with a **trained, locally-run machine learning model** that replaces the hand-coded scoring rule as the system's primary decision-maker, while keeping the original formula available as a safety-net fallback.
 
 ---
 
-## How The System Works
+## Summary
 
-Real music recommenders (Spotify, YouTube, etc.) build a profile of *input data* about each song — genre, mood, tempo, energy — and a separate profile of *user preferences*, usually inferred from listening history (what you've played, skipped, liked, or saved). They then use that history two ways: **collaborative filtering** compares you to *other users* with similar taste ("people who liked what you liked also liked this"), and **content-based filtering** compares songs to *your own past taste* using their raw attributes. A final *ranking/selection* step scores and sorts every candidate song and returns only the top few — the input data and preferences feed the score, but the score is what actually decides what you see.
+This project is a **content-based music recommender**: given a listener's stated taste (favorite genre, favorite mood, target energy, and whether they like acoustic tracks), it scores every song in a small catalog and returns the top matches with a human-readable explanation for each pick.
 
-This simulation only has one user to work with (no listening history, no other users to compare against), so it's purely content-based — it just compares each song's attributes to what that one user *says* they like, instead of inferring it from behavior.
+What makes it more than a lookup table is `src/model.py` — a small **scikit-learn model, fit specifically for this scoring task**, that turns genre/mood into continuous text-similarity scores instead of brittle exact-string matches, and is trained to never let an out-of-range input silently zero out part of a user's preferences. That matters for two reasons: (1) it demonstrates that a "fine-tuned/specialized model" doesn't have to mean a large hosted LLM — a small, fully local, purpose-fit model can meaningfully improve a system's behavior — and (2) it fixes two real bugs the original hand-coded formula had (documented below), rather than just wrapping the same logic in a fancier interface.
 
-**`Song` features used:** `genre`, `mood`, `energy`, `tempo_bpm`, `valence`, `danceability`, and `acousticness`
-
-**`UserProfile` stores:** `favorite_genre`, `favorite_mood`, `target_energy`, and `likes_acoustic`
-
-**Algorithm Recipe:** each song is scored by how closely it matches the user's stated taste profile. The final recipe is:
-
-- **+2.0 points** if the song's `genre` matches the user's `favorite_genre`
-- **+1.0 point** if the song's `mood` matches the user's `favorite_mood`
-- **Energy similarity bonus:** add points based on how close the song's `energy` is to the user's `target_energy`
-  - Example formula: `energy_bonus = 1.5 * max(0, 1 - abs(song.energy - user.target_energy) / 0.5)`
-- **Acoustic bonus:** if the user likes acoustic tracks and the song has high `acousticness`, add a small bonus such as **+0.5**
-
-The total score is:
-
-```text
-score = genre_match + mood_match + energy_bonus + acoustic_bonus
-```
-
-After all songs are scored, the recommender sorts them from highest to lowest score and returns the top `k` results.
-
-**Bias note:** this system may over-prioritize genre and under-value songs that are excellent matches for the user's mood or energy but happen to use a different genre. It also relies on a very simple profile, so it may miss more nuanced preferences.
+Everything runs **offline** — no API keys, no network calls, no cloud inference. Training data is `pandas`/`numpy`-free synthetic data generated from a documented policy (see [Design Decisions](#design-decisions--trade-offs)), the model artifact is a few KB, and the whole pipeline runs in under a second on a laptop.
 
 ---
 
-## Getting Started
+## Architecture Overview
 
-### Setup
+See [`diagrams/architecture.mmd`](diagrams/architecture.mmd) for the full Mermaid diagram. It has three parts:
 
-1. Create a virtual environment (optional but recommended):
+1. **Offline training** (`python -m src.train_model`, run ahead of time / whenever `data/songs.csv` changes): reads the song catalog, generates thousands of synthetic `(features → match score)` examples from a documented scoring policy, fits a TF-IDF vectorizer + Ridge regression model on them, and writes the result to `models/taste_match_model.joblib`. This artifact is committed to the repo, so nobody running the app needs to train anything themselves.
+2. **Runtime recommendation flow** (`python -m src.main`): loads the song catalog and a set of user taste profiles, clamps any out-of-range `target_energy` input (logging a warning if it had to), and scores every song. Scoring tries the trained model first; if the model file is missing or errors, it falls back to the original hand-coded formula automatically, and the failure is logged rather than hidden. Ranked results with explanations are printed to the console.
+3. **Verification & human-in-the-loop**: automated `pytest` tests check the scoring logic directly (including the model's fallback behavior), and a human reviews the console output across both "normal" and deliberately adversarial taste profiles, writing up findings in [`model_card.md`](model_card.md).
+
+A shared `src/logging_setup.py` module feeds console logging into both the training and runtime paths (model loads, clamped inputs, scoring fallbacks, and errors are all logged, never silently swallowed).
+
+---
+
+## Setup Instructions
+
+1. **Clone the repo and enter the project folder.**
+
+2. **Create a virtual environment** (optional but recommended):
 
    ```bash
    python -m venv .venv
-   source .venv/bin/activate      # Mac or Linux
+   source .venv/bin/activate      # Mac/Linux
    .venv\Scripts\activate         # Windows
+   ```
 
-2. Install dependencies
+3. **Install dependencies:**
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-3. Run the app:
+   This installs `pandas`, `pytest`, `streamlit`, `scikit-learn`, `joblib`, and `numpy`.
 
-```bash
-python -m src.main
-```
+4. **Run the app:**
 
-### Running Tests
+   ```bash
+   python -m src.main
+   ```
 
-Run the starter tests with:
+   The trained model artifact (`models/taste_match_model.joblib`) is already committed, so this works immediately — no training step required. It prints ranked recommendations for six user profiles (three typical tastes, three deliberately adversarial edge cases) straight to the console, with logging interleaved.
 
-```bash
-pytest
-```
+5. **(Optional) Retrain the model**, e.g. after editing `data/songs.csv`:
 
-You can add more tests in `tests/test_recommender.py`.
+   ```bash
+   python -m src.train_model
+   ```
 
----
+   This overwrites `models/taste_match_model.joblib` and logs the training sample count, validation error, and learned coefficients.
 
-## Trained Model
+6. **Run the tests:**
 
-Scoring is backed by a small trained model — `models/taste_match_model.joblib` — that's already committed to the repo, so `python -m src.main` works immediately with no extra setup. See [`model_card.md`](model_card.md) for what it is and how it works.
-
-If you want to retrain it (e.g. after editing `data/songs.csv`), run:
-
-```bash
-python -m src.train_model
-```
-
-This overwrites `models/taste_match_model.joblib` and logs the sample count, validation error, and learned weights to the console. If the model file is ever missing or fails to load, `src/recommender.py` logs a warning and automatically falls back to the original hand-coded scoring formula, so the app never crashes because of it. All of this — model loads, energy clamping, scoring fallbacks — is logged to the console via Python's standard `logging` module.
+   ```bash
+   pytest
+   ```
 
 ---
 
-## Sample Recommendation Output
+## Sample Interactions
 
-User profile: `genre=pop, mood=happy, energy=0.8`
+All output below is copy-pasted from an actual `python -m src.main` run.
+
+### 1. A normal taste profile, with the model giving partial credit for a similar genre
+
+**Input:** `{genre: "pop", mood: "happy", energy: 0.9}`
 
 ```
-Top Recommendations
-========================================
-1. Sunrise City by Neon Echo - Score: 4.44
-   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.44)
+1. Sunrise City by Neon Echo - Score: 4.24
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.26)
 
-2. Gym Hero by Max Pulse - Score: 3.11
-   Because: genre match (+2.0), energy similarity (+1.11)
+2. Gym Hero by Max Pulse - Score: 3.40
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.41)
 
-3. Rooftop Lights by Indigo Parade - Score: 2.38
-   Because: mood match (+1.0), energy similarity (+1.38)
-
-4. Streetlight Rhythm by Atlas Crew - Score: 1.44
-   Because: energy similarity (+1.44)
-
-5. Firelight Parade by Brass Meridian - Score: 1.38
-   Because: energy similarity (+1.38)
+3. Rooftop Lights by Indigo Parade - Score: 3.32
+   Because: genre similarity 0.63 (~+1.25), mood similarity 1.00 (~+0.99), energy closeness (~+1.08)
 ```
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
+"Rooftop Lights" is tagged `genre: "indie pop"`, not `"pop"`. Under the *original* exact-string-match formula this song got **zero** genre credit despite being an obviously related style. The trained model's TF-IDF similarity scores `"pop"` vs. `"indie pop"` at `0.63`, giving it a meaningful `~+1.25` — which is why it now lands at #3 instead of being buried under exact-match-only songs.
+
+### 2. A distinct, different taste profile — the model generalizes correctly
+
+**Input:** `{genre: "lofi", mood: "chill", energy: 0.3}`
+
+```
+1. Library Rain by Paper Lanterns - Score: 4.33
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.35)
+
+2. Midnight Coding by LoRoom - Score: 4.12
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.14)
+
+3. Focus Flow by LoRoom - Score: 3.19
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.20)
+```
+
+A completely different taste (chill, low-energy lofi instead of high-energy pop) surfaces a completely different top 5, and ranks the two genuinely chill lofi tracks above one that only matches on genre — showing the model is sensitive to all three signals at once, not just genre.
+
+### 3. An adversarial edge case — energy value outside the valid range
+
+**Input:** `{genre: "pop", mood: "happy", energy: 1.5}` — `1.5` is outside the valid `[0, 1]` energy range.
+
+```
+1. Sunrise City by Neon Echo - Score: 3.94
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+0.96)
+
+2. Gym Hero by Max Pulse - Score: 3.28
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.29)
+```
+
+Console log for this run: `WARNING src.recommender: target_energy 1.50 out of range [0, 1]; clamped to 1.00`.
+
+Under the *original* formula, any `target_energy` above `1.0` made `abs(song.energy - target_energy)` always ≥ `0.5`, silently zeroing the entire energy term for every song with no warning. Here, the input is clamped to `1.0` with a logged warning, and the energy term still contributes meaningfully (`~+0.96` for a `0.82`-energy song) instead of vanishing.
 
 ---
 
-## Experiments You Tried
+## Testing & Reliability
 
-To stress-test the scoring logic, `src/main.py` runs six user profiles against the catalog: three distinct "normal" tastes, and three adversarial/edge-case profiles designed to see whether the scoring rule breaks or produces surprising results.
+**In short: 6/6 automated tests pass, including a reliability check where the trained model's #1 pick agreed with the original scoring formula's #1 pick in 49/50 (98%) of randomly sampled taste profiles** — the one disagreement was a near-miss genre case where the model correctly gave partial credit and the formula gave none, which is the exact behavior the model was built to add.
 
-### Distinct taste profiles
+- **Automated tests** (`pytest`, `tests/test_recommender.py`, 6 tests): ranking order, non-empty explanations, partial credit for a similar-but-not-identical genre, energy values outside `[0, 1]` no longer zeroing the score, correct behavior when the trained model is unavailable, and the model/formula agreement check described above.
+- **Logging & guardrails** (`src/logging_setup.py`, `src/recommender.py`): every model load, clamped out-of-range input, and scoring fallback is logged with a level (`INFO`/`WARNING`/`ERROR`) rather than failing silently — verified by deliberately renaming the model artifact and confirming the system logged the failure and still produced correct output via the formula fallback.
+- **Human review**: console output was manually compared across 6 profiles (3 typical, 3 adversarial) before and after the model was introduced, to confirm the two bugs it targets (exact-match genre bias, unclamped energy) were actually fixed rather than just relocated.
 
-**High-Energy Pop** — `{genre: pop, mood: happy, energy: 0.9}`
+Full "what worked / what didn't / what we learned" write-up is in [`model_card.md`](model_card.md#9-testing-summary).
 
-```
-1. Sunrise City by Neon Echo - Score: 4.26
-   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.26)
+---
 
-2. Gym Hero by Max Pulse - Score: 3.41
-   Because: genre match (+2.0), energy similarity (+1.41)
+## Design Decisions & Trade-offs
 
-3. Rooftop Lights by Indigo Parade - Score: 2.08
-   Because: mood match (+1.0), energy similarity (+1.08)
+**Why a small local scikit-learn model instead of an LLM/RAG pipeline.** The assignment's "fine-tuned/specialized model" requirement doesn't require a large hosted model — it asks for something trained/adjusted for a *specific task*. A hosted LLM call would need an API key and network access, adding a dependency this project doesn't need for what is fundamentally a small numeric scoring problem. A model that's a few KB, trains in under a second, and runs with zero network calls is a better fit for the actual task, and it's honest about being a genuine fit model rather than a thin wrapper around an API call.
 
-4. Storm Runner by Voltline - Score: 1.47
-   Because: energy similarity (+1.47)
+**Why TF-IDF + Ridge regression specifically.** The two real weaknesses in the original formula were exact-string genre/mood matching (no partial credit for "pop" vs. "indie pop") and unclamped energy input. A character n-gram TF-IDF vectorizer solves the first problem directly — similar strings share substrings and get nonzero cosine similarity — without needing a hand-authored genre-similarity table that would need to be maintained forever. Ridge regression was chosen over a more expressive model (e.g. a random forest) specifically *because* it's linear: each feature's contribution to the final score can be read directly off the model's coefficients, which is what generates the "Because: ..." explanation for each recommendation. A more complex model would have made explanations much harder to produce faithfully.
 
-5. Neon Afterglow by Pixel Harbor - Score: 1.44
-   Because: energy similarity (+1.44)
-```
+**Why synthetic training data, and why that's disclosed as a limitation.** The catalog has no real listening history to learn from, so training labels come from a documented "teacher policy": the same weights as the original hand-coded formula (2.0 / 1.0 / 1.5 / 0.5), but with continuous similarity instead of boolean matches, clamped energy, and injected noise so the model is a genuine fit rather than a symbolic copy. This is disclosed plainly in `model_card.md` as a limitation — the model has learned to reproduce a human-authored rule more flexibly, not learned anything new about music taste. Training on real listening/skip data would be the natural next step.
 
-**Chill Lofi** — `{genre: lofi, mood: chill, energy: 0.3}`
+**Why the trained artifact is committed instead of trained on first run.** `python -m src.main` should work immediately after `pip install -r requirements.txt`, with no hidden first-run latency or surprise file writes. The training script (`python -m src.train_model`) stays available and documented for anyone who wants to inspect or rerun it.
 
-```
-1. Library Rain by Paper Lanterns - Score: 4.35
-   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.35)
+**Why the model has a fallback instead of being a hard dependency.** If the model file is ever missing, corrupted, or fails to unpickle (e.g. a scikit-learn version mismatch on someone else's machine), `src/recommender.py` catches the failure, logs it, and falls back to the original hand-coded formula rather than crashing. This trades a small amount of code complexity for the system never being fully broken by a model-loading issue — a deliberate reliability choice for a project meant to "run correctly and reproducibly."
 
-2. Midnight Coding by LoRoom - Score: 4.14
-   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.14)
-
-3. Focus Flow by LoRoom - Score: 3.20
-   Because: genre match (+2.0), energy similarity (+1.20)
-
-4. Spacewalk Thoughts by Orbit Bloom - Score: 2.44
-   Because: mood match (+1.0), energy similarity (+1.44)
-
-5. Golden Hour Waltz by Marina Vale - Score: 1.47
-   Because: energy similarity (+1.47)
-```
-
-**Why "Library Rain" ranked #1:** with the current weights in `recommender.py` (`+2.0` genre match, `+1.0` mood match, and `energy_bonus = 1.5 * max(0, 1 - abs(song.energy - target_energy) / 0.5)`), the maximum a song can score against this profile is `2.0 + 1.0 + 1.5 = 4.5` — a perfect `lofi`/`chill` song with `energy` exactly `0.3`. "Library Rain" (`lofi`, `chill`, `energy: 0.35`) hits both categorical matches and lands only `0.05` away from the target energy, earning `1.5 * (1 - 0.05/0.5) = 1.35` and a total of `4.35`, the closest any song gets to that ceiling. "Midnight Coding" (`lofi`, `chill`, `energy: 0.42`) matches the same two categories but sits `0.12` away from the target, so its energy bonus drops to `1.14`, putting it `0.21` points behind. "Focus Flow" only matches genre (its mood is `focused`, not `chill`), so it loses the full `+1.0` mood term and falls to third despite decent energy alignment. In other words, the ranking rewards songs that satisfy *all three* signals at once, and among ties on genre+mood, the energy-similarity term (worth up to `1.5`, more than either single categorical match) acts as the tiebreaker — which is exactly why the top two spots are both genuinely chill, low-energy lofi tracks rather than songs that merely match on one attribute.
-
-**Deep Intense Rock** — `{genre: rock, mood: intense, energy: 0.9}`
-
-```
-1. Storm Runner by Voltline - Score: 4.47
-   Because: genre match (+2.0), mood match (+1.0), energy similarity (+1.47)
-
-2. Gym Hero by Max Pulse - Score: 2.41
-   Because: mood match (+1.0), energy similarity (+1.41)
-
-3. Neon Afterglow by Pixel Harbor - Score: 1.44
-   Because: energy similarity (+1.44)
-
-4. Firelight Parade by Brass Meridian - Score: 1.32
-   Because: energy similarity (+1.32)
-
-5. Sunrise City by Neon Echo - Score: 1.26
-   Because: energy similarity (+1.26)
-```
-
-### Adversarial / edge-case profiles
-
-**Conflicting Signals** — `{genre: rock, mood: chill, energy: 0.9}` (rock genre paired with a chill mood, plus a high target energy — internally contradictory taste)
-
-```
-1. Storm Runner by Voltline - Score: 3.47
-   Because: genre match (+2.0), energy similarity (+1.47)
-
-2. Neon Afterglow by Pixel Harbor - Score: 1.44
-   Because: energy similarity (+1.44)
-
-3. Gym Hero by Max Pulse - Score: 1.41
-   Because: energy similarity (+1.41)
-
-4. Firelight Parade by Brass Meridian - Score: 1.32
-   Because: energy similarity (+1.32)
-
-5. Sunrise City by Neon Echo - Score: 1.26
-   Because: energy similarity (+1.26)
-```
-
-The scorer didn't break — it just fell back to the genre and energy terms since no song is both `rock` and `chill`. The winner (Storm Runner) is a rock/intense song, which is a reasonable resolution of the conflict but shows the mood preference was effectively ignored.
-
-**Nonexistent Genre/Mood** — `{genre: vaporwave, mood: euphoric, energy: 0.5}` (values that don't exist anywhere in the catalog)
-
-```
-1. Winter Orchard by The Cedar State - Score: 1.47
-   Because: energy similarity (+1.47)
-
-2. Velvet Skyline by Solstice Choir - Score: 1.32
-   Because: energy similarity (+1.32)
-
-3. Blue Canyon by Willow Reed - Score: 1.26
-   Because: energy similarity (+1.26)
-
-4. Midnight Coding by LoRoom - Score: 1.26
-   Because: energy similarity (+1.26)
-
-5. Focus Flow by LoRoom - Score: 1.20
-   Because: energy similarity (+1.20)
-```
-
-No errors or crashes — the scorer just degrades gracefully to energy-only matching since `==` comparisons against genre/mood strings that never appear simply never award points. The recommendations end up genre-agnostic, which is the expected (if unsatisfying) behavior for a taste the catalog can't represent.
-
-**Out-of-Range Energy** — `{genre: pop, mood: happy, energy: 1.5}` (energy above the valid `0.0-1.0` range)
-
-```
-1. Sunrise City by Neon Echo - Score: 3.00
-   Because: genre match (+2.0), mood match (+1.0)
-
-2. Gym Hero by Max Pulse - Score: 2.00
-   Because: genre match (+2.0)
-
-3. Rooftop Lights by Indigo Parade - Score: 1.00
-   Because: mood match (+1.0)
-
-4. Midnight Coding by LoRoom - Score: 0.00
-   Because:
-
-5. Storm Runner by Voltline - Score: 0.00
-   Because:
-```
-
-This surfaced a real edge case: since no song can have `energy` above `1.0`, `abs(song.energy - 1.5)` is always `>= 0.5`, so `energy_bonus` clamps to `0` for every song — the energy term silently disappears from the score entirely. The ranking still "works" (it falls back to genre/mood matches), but a user who mistakenly submits an out-of-range value gets no feedback that their energy preference was ignored. This suggests `score_song` should validate/clamp `target_energy` to `[0, 1]` rather than silently zeroing out the term.
+**Why the previously-stubbed `Recommender` class was implemented as a thin adapter, not a rewrite.** The codebase had two parallel scoring implementations — a working function-based path and a stubbed object-oriented one that the test suite actually exercised. Rather than duplicate the scoring logic (and the trained-model integration) in both, the OOP `Recommender` class now just converts its dataclasses to dicts and calls the same `score_song`/`recommend_songs` functions the CLI uses. One scoring path, one source of truth, two interfaces on top of it.
 
 ---
 
 ## Limitations and Risks
 
-- It only works on a tiny catalog (18 songs), so it can't represent most of musical taste.
-- It does not understand lyrics, language, artist popularity, or actual listening history.
-- It over-favors whichever genres happen to have more songs in the catalog (lofi, pop) — see the model card for the full bias writeup.
-- It treats genre and mood as exact text matches, so close-but-not-identical tastes (e.g. "pop" vs "indie pop") get no partial credit.
+- Small catalog (18 songs) — can't represent most of musical taste, and most genres have only one song, creating a filter-bubble effect for less-common tastes.
+- No understanding of lyrics, artist popularity, release year, or actual listening history.
+- Training labels for the trained model are synthetic (a documented teacher policy), not real listener feedback — see Design Decisions above.
+- Still a single-user, content-based simulation — no collaborative filtering (comparing across multiple users), which is half of how real platforms like Spotify recommend music.
 
-See [`model_card.md`](model_card.md) for a deeper breakdown of bias and improvement ideas.
+See [`model_card.md`](model_card.md) for the full bias, evaluation, and future-work writeup.
 
 ---
 
 ## Reflection
 
-Read and complete `model_card.md`:
+Read the full writeup in [`model_card.md`](model_card.md).
 
-[**Model Card**](model_card.md)
-
-Building this showed me that a recommender is really just a scoring rule wearing a friendly interface — every "recommendation" is a number, sorted. That made it obvious how directly the *weights* you pick (genre worth +2.0, mood worth +1.0, energy worth up to +1.5) decide what a user sees, before any song content even matters.
-
-It also showed me where bias sneaks in without anyone writing biased code: our catalog just happens to have more lofi and pop songs than anything else, so those listeners get better, more varied recommendations for free, while a rock or classical fan gets one strong match and four compromises. The math was fair; the data wasn't. That's made me a lot more skeptical of "neutral" algorithms in real apps like Spotify — an even-handed formula can still produce very uneven outcomes if it's trained on uneven data.
-
+Building this showed that a recommender is really just a scoring rule wearing a friendly interface — every "recommendation" is a number, sorted — and that training a small model to produce that number doesn't change that fact, it just changes *how the number gets decided* and how gracefully it handles inputs the original rule's author didn't anticipate. Bias also doesn't require biased code: this catalog happens to have more lofi and pop songs than anything else, so those listeners get better, more varied recommendations for free, model or no model. That's made me a lot more skeptical of "neutral" algorithms in real apps — a well-fit, bug-free scoring model can still produce very uneven outcomes if it's trained on uneven data.
