@@ -224,6 +224,111 @@ Under the *original* formula, any `target_energy` above `1.0` made `abs(song.ene
 
 ---
 
+## Before/After: Does Adding More Catalog Songs Fix the Genre Filter Bubble?
+
+`model_card.md` documents a real bias: 13 of 15 genres have only 1 song, so a fan of an under-represented genre (e.g. rock) gets one real match and four compromises. This tests whether adding more songs to that genre actually fixes it — **using the exact same trained model, with no retraining** — by running the same rock-taste profile against the original catalog and a copy with 4 extra rock songs appended (`data/songs_augmented_demo.csv`).
+
+```bash
+$ python -m src.demo_genre_balance
+```
+
+```
+BEFORE: original catalog (1 rock song)
+========================================
+1. Storm Runner by Voltline (rock) - Score: 4.45
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.47)
+2. Gym Hero by Max Pulse (pop) - Score: 2.40
+   Because: mood similarity 1.00 (~+0.99), energy closeness (~+1.41)
+3. Neon Afterglow by Pixel Harbor (electronic) - Score: 1.59
+   Because: genre similarity 0.06 (~+0.11), mood similarity 0.04 (~+0.04), energy closeness (~+1.44)
+4. Firelight Parade by Brass Meridian (disco) - Score: 1.34
+   Because: mood similarity 0.03 (~+0.03), energy closeness (~+1.32)
+5. Sunrise City by Neon Echo (pop) - Score: 1.26
+   Because: energy closeness (~+1.26)
+
+AFTER: augmented catalog (5 rock songs), same trained model
+========================================
+1. Storm Runner by Voltline (rock) - Score: 4.45
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.47)
+2. Iron Tide by Granite Choir (rock) - Score: 4.42
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.44)
+3. Concrete Skyline by Riot Static (rock) - Score: 3.39
+   Because: genre similarity 1.00 (~+1.99), mood similarity 0.06 (~+0.06), energy closeness (~+1.35)
+4. Gravel Anthem by Voltline (rock) - Score: 3.23
+   Because: genre similarity 1.00 (~+1.99), mood similarity 0.04 (~+0.04), energy closeness (~+1.20)
+5. Broken Amplifier by Rust Parade (rock) - Score: 2.89
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+0.90)
+```
+
+**Before**, only 1 of the top 5 songs is actually rock — the rest are filler that merely shares energy or mood. **After** adding 4 more rock songs to the catalog, all 5 top picks are rock, each correctly ranked by how well its mood and energy also match (an "intense" near-perfect match at #1–2, then progressively looser mood matches at #3–5). Nothing about `src/model.py` or `models/taste_match_model.joblib` changed between these two runs — the TF-IDF vectorizer and Ridge regressor are identical. This confirms the genre-skew bias documented in `model_card.md` is a **data** problem, not a **model** problem: the trained model already generalizes correctly to new songs of a genre it's seen before, it just can't recommend rock songs that don't exist in the catalog.
+
+---
+
+## Optional: Train on Real Feedback Instead of Synthetic Labels
+
+The default model (`models/taste_match_model.joblib`) is trained on synthetic labels — a documented "teacher policy" that mimics the original formula (see Design Decisions below), since the catalog has no real listening history. This adds a second, parallel pipeline that trains on **real human liked/skipped judgments** instead, so the two can be compared directly.
+
+**How it works, without changing any of the existing scoring code:**
+
+1. `data/real_feedback.csv` lists all 18 catalog songs with a blank `liked` column, for one fixed persona (`REAL_USER_PROFILE` in `src/train_model_real.py`, defaults to `genre=pop, mood=happy, energy=0.85`). Fill in `1` (liked) or `0` (skipped) for each row — you're acting as that listener.
+2. Train a second model on those real labels:
+
+   ```bash
+   python -m src.train_model_real
+   ```
+
+   This reuses the exact same `fit_vectorizer`/`fit_regressor` functions from `train_model.py` — only the data feeding them is different — and saves to a separate file, `models/taste_match_model_real.joblib`, so the default synthetic model is never touched.
+3. Compare the two models on the same persona and catalog:
+
+   ```bash
+   python -m src.demo_real_vs_synthetic
+   ```
+
+The only change to `src/recommender.py` needed to make this comparison possible was adding an optional `model=` parameter to `score_song`/`recommend_songs` (defaulting to `None`, meaning "use the normal cached model as before") — everything else, including the fallback-to-formula guardrail, is unchanged. `src/main.py` also accepts `--model synthetic` (default) or `--model real` to run the whole 6-profile battery against either trained model.
+
+### Actual result, using real labels
+
+```bash
+$ python -m src.train_model_real
+```
+
+```
+2026-07-24 03:47:28,569 [INFO] __main__: Loaded 18 real listen/skip labels (50% liked)
+2026-07-24 03:47:28,571 [INFO] src.train_model: Trained on 14 samples, validated on 4
+2026-07-24 03:47:28,571 [INFO] src.train_model: Validation MAE: 0.4990
+2026-07-24 03:47:28,571 [INFO] src.train_model: Learned coefficients: {'genre_similarity': -0.008, 'mood_similarity': 0.347, 'energy_closeness': -0.358, 'acoustic_bonus_flag': 0.0}
+2026-07-24 03:47:28,571 [INFO] src.train_model: Learned intercept: 0.5219
+2026-07-24 03:47:28,575 [INFO] __main__: Saved real-feedback-trained model to models/taste_match_model_real.joblib
+```
+
+```bash
+$ python -m src.demo_real_vs_synthetic
+```
+
+```
+SYNTHETIC: trained on the documented teacher policy
+========================================
+1. Sunrise City by Neon Echo (pop) - Score: 4.39
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.41)
+2. Rooftop Lights by Indigo Parade (indie pop) - Score: 3.47
+   Because: genre similarity 0.63 (~+1.25), mood similarity 1.00 (~+0.99), energy closeness (~+1.23)
+3. Gym Hero by Max Pulse (pop) - Score: 3.25
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.26)
+
+REAL: trained on your actual liked/skipped labels
+========================================
+1. Rooftop Lights by Indigo Parade (indie pop) - Score: 0.57
+   Because: mood similarity 1.00 (~+0.35)
+2. Sunrise City by Neon Echo (pop) - Score: 0.52
+   Because: mood similarity 1.00 (~+0.35)
+3. Library Rain by Paper Lanterns (lofi) - Score: 0.52
+   Because:
+```
+
+**This is genuinely revealing, not just a formality.** The synthetic model's coefficients (`genre_similarity: 1.99, mood_similarity: 0.99, energy_closeness: up to 1.5`) were designed to mirror the original formula, so of course genre/mood/energy all matter roughly the way the assignment's rubric assumed. The *real* labels tell a different story for this one real listener: `genre_similarity` came out at essentially `0` (genre didn't predict what they'd actually pick), `energy_closeness` came out *negative* (`-0.358` — being close to the stated `0.85` energy target didn't make a song more likely to be liked; several liked songs were actually low-energy), and `mood_similarity` was the only feature that meaningfully mattered (`0.347`). The real model's validation error (`MAE 0.499`, on a 0/1 target) is also far worse than the synthetic model's (`MAE 0.042`), which is expected — 18 labels for one person is nowhere near enough data to fit 4 features reliably, and it shows in the many tied scores among songs the model has no real signal to distinguish. **The takeaway `model_card.md` now documents:** the synthetic "teacher policy" encodes what the *assignment's formula assumed* mattered; it does not necessarily encode what a *real listener* actually responds to, and this experiment is direct, if small-sample, evidence of that gap.
+
+---
+
 ## Testing & Reliability
 
 **In short: 6/6 automated tests pass, including a reliability check where the trained model's #1 pick agreed with the original scoring formula's #1 pick in 49/50 (98%) of randomly sampled taste profiles** — the one disagreement was a near-miss genre case where the model correctly gave partial credit and the formula gave none, which is the exact behavior the model was built to add.

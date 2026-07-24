@@ -209,12 +209,16 @@ def _score_with_model(
     return breakdown.total, reasons
 
 
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
+def score_song(
+    user_prefs: Dict, song: Dict, model: Optional[TasteMatchModel] = None
+) -> Tuple[float, List[str]]:
     """Scores a song against user preferences and returns (score, reasons).
 
     Uses the trained taste-match model when available, falling back to the
     original hand-coded formula if the model can't be loaded or fails to
-    score a given song.
+    score a given song. Pass `model` explicitly to score with a specific
+    trained model instead of the default cached one (e.g. to compare two
+    models); leave it as None for normal use.
     """
     favorite_genre = user_prefs.get("genre", user_prefs.get("favorite_genre"))
     favorite_mood = user_prefs.get("mood", user_prefs.get("favorite_mood"))
@@ -229,7 +233,8 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
             target_energy,
         )
 
-    model = _get_model()
+    if model is None:
+        model = _get_model()
     if model is not None:
         try:
             return _score_with_model(
@@ -244,8 +249,10 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
         favorite_genre, favorite_mood, target_energy, likes_acoustic, song
     )
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
+def recommend_songs(
+    user_prefs: Dict, songs: List[Dict], k: int = 5, model: Optional[TasteMatchModel] = None
+) -> List[Tuple[Dict, float, str]]:
     """Scores every song against user preferences and returns the top k, ranked highest to lowest."""
-    scored = [(song, *score_song(user_prefs, song)) for song in songs]
+    scored = [(song, *score_song(user_prefs, song, model=model)) for song in songs]
     ranked = sorted(scored, key=lambda entry: entry[1], reverse=True)
     return [(song, score, ", ".join(reasons)) for song, score, reasons in ranked[:k]]

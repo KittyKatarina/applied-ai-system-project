@@ -9,12 +9,44 @@ You will implement the functions in recommender.py:
 - recommend_songs
 """
 
+import argparse
+import logging
+
 from src.logging_setup import configure_logging
+from src.model import ModelLoadError, TasteMatchModel
 from src.recommender import load_songs, recommend_songs
+from src.train_model_real import REAL_MODEL_PATH
+
+logger = logging.getLogger(__name__)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Music Recommender Simulation")
+    parser.add_argument(
+        "--model",
+        choices=["synthetic", "real"],
+        default="synthetic",
+        help="Which trained model to score with (default: synthetic). "
+        "'real' requires running `python -m src.train_model_real` first.",
+    )
+    return parser.parse_args()
 
 
 def main() -> None:
     configure_logging()
+    args = parse_args()
+
+    model = None
+    if args.model == "real":
+        try:
+            model = TasteMatchModel.load(REAL_MODEL_PATH)
+        except ModelLoadError:
+            logger.error(
+                "Real-feedback model not found at %s — run `python -m src.train_model_real` "
+                "first. Falling back to the default synthetic model.",
+                REAL_MODEL_PATH,
+            )
+
     songs = load_songs("data/songs.csv")
 
     user_profiles = {
@@ -39,7 +71,7 @@ def main() -> None:
     }
 
     for profile_name, user_prefs in user_profiles.items():
-        recommendations = recommend_songs(user_prefs, songs, k=5)
+        recommendations = recommend_songs(user_prefs, songs, k=5, model=model)
 
         print(f"\nProfile: {profile_name}  ({user_prefs})")
         print("Top Recommendations")
