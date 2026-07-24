@@ -1,0 +1,50 @@
+%% Music Recommender Simulation - System Architecture
+flowchart TD
+
+    subgraph OFFLINE["Offline: Train the Specialized Model (python -m src.train_model)"]
+        CSV[("data/songs.csv\n18 songs")]
+        SYN["generate_training_data()\nsynthetic (feature -> score) examples\nfrom documented teacher policy"]
+        FIT["fit_vectorizer() + fit_regressor()\nTF-IDF vectorizer + Ridge regression"]
+        ARTIFACT[("models/taste_match_model.joblib\ncommitted artifact")]
+        TRAINLOG["/ logs: sample count, validation MAE,\nlearned coefficients /"]
+
+        CSV --> SYN --> FIT --> ARTIFACT
+        FIT -.-> TRAINLOG
+    end
+
+    subgraph RUNTIME["Runtime: python -m src.main"]
+        PROFILES["User taste profiles\n(genre, mood, target_energy, likes_acoustic)\nhardcoded in src/main.py, incl. adversarial cases"]
+        LOAD["load_songs()\nsrc/recommender.py"]
+        SCORE["score_song() dispatcher\nfor every song"]
+        CLAMP["_clamp_energy()\nguardrail: clip target_energy to [0,1]\nlogs WARNING if out of range"]
+        MODELCHECK{"Trained model\nloaded OK?"}
+        MODELSCORE["_score_with_model()\nTasteMatchModel.predict()\ngenre/mood similarity + energy closeness"]
+        FALLBACK["_score_with_formula()\noriginal hand-coded formula\nsafe fallback, logs WARNING/ERROR"]
+        RANK["recommend_songs()\nsort all songs by score, take top k"]
+        OUTPUT["Console output:\nranked songs + score + explanation"]
+
+        PROFILES --> SCORE
+        CSV --> LOAD --> SCORE
+        SCORE --> CLAMP --> MODELCHECK
+        MODELCHECK -- "yes" --> MODELSCORE
+        MODELCHECK -- "no / error" --> FALLBACK
+        ARTIFACT -.-> MODELCHECK
+        MODELSCORE --> RANK
+        FALLBACK --> RANK
+        RANK --> OUTPUT
+    end
+
+    subgraph VERIFY["Verification & Human-in-the-loop"]
+        TESTS["pytest: tests/test_recommender.py\nautomated checks -\ncorrect ranking, partial genre credit,\nenergy clamping, model-unavailable fallback"]
+        MANUAL["Manual review of console output\nfor all 6 profiles (3 normal + 3 adversarial)"]
+        CARD["model_card.md / README.md\nhuman-written bias, limitation,\nand future-work analysis"]
+
+        OUTPUT --> MANUAL --> CARD
+        SCORE -.-> TESTS
+        MODELSCORE -.-> TESTS
+        FALLBACK -.-> TESTS
+    end
+
+    LOGGING["src/logging_setup.py\ncross-cutting: logs model load,\nclamping, fallbacks, errors to console"]
+    LOGGING -.-> SCORE
+    LOGGING -.-> FIT

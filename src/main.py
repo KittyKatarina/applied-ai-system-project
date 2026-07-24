@@ -9,10 +9,12 @@ You will implement the functions in recommender.py:
 - recommend_songs
 """
 
+from src.logging_setup import configure_logging
 from src.recommender import load_songs, recommend_songs
 
 
 def main() -> None:
+    configure_logging()
     songs = load_songs("data/songs.csv")
 
     user_profiles = {

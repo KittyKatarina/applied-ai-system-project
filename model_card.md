@@ -28,18 +28,17 @@ Every song has traits: genre, mood, energy, tempo, valence, danceability, and ho
 
 You describe your taste with four things: favorite genre, favorite mood, target energy, and whether you like acoustic music.
 
-The system gives each song points based on how well it fits your taste:
+Scoring is done by **a small trained model** (`TasteMatchModel` in `src/model.py`), not just hand-picked constants:
 
-- **+2 points** if the song's genre matches your favorite genre
-- **+1 point** if the song's mood matches your favorite mood
-- **Up to +1.5 points** if the song's energy is close to your target energy (closer energy = more points, and it's 0 points if the gap is too big)
-- **+0.5 points** if you like acoustic songs and the song is acoustic enough
+- A **TF-IDF vectorizer** (fit on the catalog's genre/mood labels, using character n-grams) turns genre and mood into continuous similarity scores instead of exact-match booleans. This is what lets "pop" and "indie pop" share partial credit, instead of one small text difference losing you the entire +2 point bonus.
+- A **Ridge regression model** takes four features — genre similarity, mood similarity, energy closeness, and an acoustic-bonus flag — and predicts a match score. It was trained (`src/train_model.py`) on 4,000 synthetic examples built from a documented "teacher policy": the same weights as the original hand-coded formula (2.0 / 1.0 / 1.5 / 0.5), but with continuous similarity instead of exact matches, small random noise, and — importantly — the target energy **clamped to `[0, 1]` before comparison**, so an out-of-range input like `1.5` no longer silently zeroes out the whole energy term.
+- Because Ridge is a linear model, each feature's contribution to a song's score can be read directly off its learned coefficients — that's what produces the "Because: ..." explanation for each recommendation.
 
-Then it adds up all the points for every song and sorts them from highest score to lowest.
+The top 5 songs become your recommendations, with a short reason attached to each one, generated from the model's own feature contributions.
 
-The top 5 songs become your recommendations, with a short reason attached to each one.
+If the trained model file is missing or fails to load, the system logs a warning and falls back to the original hand-coded formula, so a bad model artifact never crashes the app.
 
-We didn't invent new rules — the starter logic already had this scoring recipe. We just made sure it actually runs end to end.
+We didn't invent new rules from scratch — the model is trained to approximate the starter logic's scoring recipe, with the genre/mood exact-match and energy-clamping limitations fixed.
 
 ---
 
@@ -99,11 +98,13 @@ We also compared profiles in pairs. A few examples:
 
 ## 8. Future Work  
 
-Let genres get partial credit for being similar (like "pop" and "indie pop"), instead of only exact matches.
+~~Let genres get partial credit for being similar (like "pop" and "indie pop"), instead of only exact matches.~~ **Done** — the trained model's TF-IDF similarity now gives "pop" and "indie pop" partial credit instead of zero.
 
-Warn or fix the input when someone enters an energy value outside `0` to `1`, instead of silently zeroing out the energy score.
+~~Warn or fix the input when someone enters an energy value outside `0` to `1`, instead of silently zeroing out the energy score.~~ **Done** — out-of-range `target_energy` is now clamped to `[0, 1]` (with a logged warning) before scoring, in both the model path and the formula fallback.
 
 Add more songs, especially to genres that only have 1 song right now, so recommendations are fair no matter what genre someone likes.
+
+**New limitation introduced by the trained model:** its training labels are synthetic — generated from a documented "teacher policy" (see Section 3) that mimics the original hand-coded formula, not from real listener feedback. So the model has learned to reproduce a human-authored scoring rule slightly more flexibly; it hasn't learned anything about music taste that wasn't already encoded in that rule. A natural next step would be training on real listening/skip data instead of a synthetic policy.
 
 ---
 

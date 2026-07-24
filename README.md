@@ -80,6 +80,20 @@ You can add more tests in `tests/test_recommender.py`.
 
 ---
 
+## Trained Model
+
+Scoring is backed by a small trained model — `models/taste_match_model.joblib` — that's already committed to the repo, so `python -m src.main` works immediately with no extra setup. See [`model_card.md`](model_card.md) for what it is and how it works.
+
+If you want to retrain it (e.g. after editing `data/songs.csv`), run:
+
+```bash
+python -m src.train_model
+```
+
+This overwrites `models/taste_match_model.joblib` and logs the sample count, validation error, and learned weights to the console. If the model file is ever missing or fails to load, `src/recommender.py` logs a warning and automatically falls back to the original hand-coded scoring formula, so the app never crashes because of it. All of this — model loads, energy clamping, scoring fallbacks — is logged to the console via Python's standard `logging` module.
+
+---
+
 ## Sample Recommendation Output
 
 User profile: `genre=pop, mood=happy, energy=0.8`
