@@ -35,7 +35,7 @@ flowchart TD
     end
 
     subgraph VERIFY["Verification & Human-in-the-loop"]
-        TESTS["pytest: tests/test_recommender.py\nautomated checks -\ncorrect ranking, partial genre credit,\nenergy clamping, model-unavailable fallback"]
+        TESTS["pytest: tests/test_recommender.py (6 tests)\ncorrect ranking, partial genre credit,\nenergy clamping, model-unavailable fallback,\nmodel/formula agreement reliability check"]
         MANUAL["Manual review of console output\nfor all 6 profiles (3 normal + 3 adversarial)"]
         CARD["model_card.md / README.md\nhuman-written bias, limitation,\nand future-work analysis"]
 

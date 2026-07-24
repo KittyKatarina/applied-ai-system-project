@@ -72,6 +72,102 @@ A shared `src/logging_setup.py` module feeds console logging into both the train
 
 ---
 
+## Reproducible Execution Evidence
+
+Everything below is copy-pasted output from actually running these exact commands in this repo (not hand-written) — see [Sample Interactions](#sample-interactions) below for annotated input/output pairs.
+
+### Training the model
+
+```bash
+$ python -m src.train_model
+```
+
+```
+2026-07-24 03:03:21,187 [INFO] __main__: Collected 15 genres and 14 moods from catalog
+2026-07-24 03:03:25,396 [INFO] __main__: Trained on 3200 samples, validated on 800
+2026-07-24 03:03:25,396 [INFO] __main__: Validation MAE: 0.0416
+2026-07-24 03:03:25,396 [INFO] __main__: Learned coefficients: {'genre_similarity': 1.988, 'mood_similarity': 0.995, 'energy_closeness': 1.496, 'acoustic_bonus_flag': 0.497}
+2026-07-24 03:03:25,396 [INFO] __main__: Learned intercept: 0.0024
+2026-07-24 03:03:25,400 [INFO] __main__: Saved trained model to models/taste_match_model.joblib
+```
+
+### Running the recommender (input → output)
+
+```bash
+$ python -m src.main
+```
+
+```
+2026-07-24 03:04:13,416 [INFO] src.model: Loaded trained taste-match model from models/taste_match_model.joblib
+
+Profile: High-Energy Pop  ({'genre': 'pop', 'mood': 'happy', 'energy': 0.9})
+Top Recommendations
+========================================
+1. Sunrise City by Neon Echo - Score: 4.24
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.26)
+
+2. Gym Hero by Max Pulse - Score: 3.40
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.41)
+
+3. Rooftop Lights by Indigo Parade - Score: 3.32
+   Because: genre similarity 0.63 (~+1.25), mood similarity 1.00 (~+0.99), energy closeness (~+1.08)
+```
+
+### Guardrail evidence: out-of-range input gets clamped, not silently dropped
+
+Same run, later profile — note the `WARNING` lines logged *before* the recommendations print, one per song scored:
+
+```
+2026-07-24 03:04:13,525 [WARNING] src.recommender: target_energy 1.50 out of range [0, 1]; clamped to 1.00
+2026-07-24 03:04:13,526 [WARNING] src.recommender: target_energy 1.50 out of range [0, 1]; clamped to 1.00
+... (18 lines total, one per song) ...
+
+Profile: Out-of-Range Energy  ({'genre': 'pop', 'mood': 'happy', 'energy': 1.5})
+Top Recommendations
+========================================
+1. Sunrise City by Neon Echo - Score: 3.94
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+0.96)
+
+2. Gym Hero by Max Pulse - Score: 3.28
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.29)
+```
+
+### Guardrail evidence: model file missing → automatic fallback, no crash
+
+Simulated by temporarily renaming `models/taste_match_model.joblib`:
+
+```
+2026-07-24 03:05:01,926 [ERROR] src.model: Failed to load taste-match model from models/taste_match_model.joblib: [Errno 2] No such file or directory: 'models/taste_match_model.joblib'
+2026-07-24 03:05:01,926 [WARNING] src.recommender: Falling back to formula-based scoring for this session
+
+Profile: High-Energy Pop  ({'genre': 'pop', 'mood': 'happy', 'energy': 0.9})
+Top Recommendations
+========================================
+```
+
+### Reliability check: automated test suite
+
+```bash
+$ python -m pytest -v -s
+```
+
+```
+collecting ... collected 6 items
+
+tests/test_recommender.py::test_recommend_returns_songs_sorted_by_score PASSED
+tests/test_recommender.py::test_explain_recommendation_returns_non_empty_string PASSED
+tests/test_recommender.py::test_partial_credit_for_similar_genre PASSED
+tests/test_recommender.py::test_energy_out_of_range_does_not_zero_score PASSED
+tests/test_recommender.py::test_recommend_falls_back_without_model PASSED
+tests/test_recommender.py::test_model_top_pick_agreement_with_formula_baseline
+Model/formula top-1 agreement across 50 profiles: 98%
+PASSED
+
+============================== 6 passed in 2.25s ==============================
+```
+
+---
+
 ## Sample Interactions
 
 All output below is copy-pasted from an actual `python -m src.main` run.
