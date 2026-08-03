@@ -166,6 +166,8 @@ PASSED
 ============================== 6 passed in 2.25s ==============================
 ```
 
+**Why this proves it works, not just seems to:** these tests assert on real outputs computed by `recommender.py`/`model.py` — ranking order, non-empty explanations, score comparisons — not fixed strings the code happens to print. To confirm this, I mutated the fallback formula (disabled the exact-genre-match bonus) and reran the suite: `test_model_top_pick_agreement_with_formula_baseline` failed immediately, proving it's actually exercising the scoring logic rather than passing regardless of behavior. Reverting the mutation brought the suite back to 6/6. Most tests run against the committed trained model by default; only the fallback and agreement tests force the formula path, which is what lets the agreement test double as a reliability check — it verifies the model's top pick agrees with the original hand-coded formula on 49/50 (98%) of randomly sampled profiles, catching wholesale disagreement while still tolerating the near-miss cases the model was built to improve on.
+
 ---
 
 ## Sample Interactions

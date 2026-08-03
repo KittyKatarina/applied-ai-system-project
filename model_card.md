@@ -147,7 +147,7 @@ There was also a section where the AI made its own suggestion about documenting 
 
 **What are the limitations or biases in the system?** The catalog's genre skew (13 of 15 genres have just 1 song, see Section 6) means common tastes like lofi/pop get better recommendations than everyone else; the model itself is only trained on synthetic labels mimicking the original formula, not real listener data.
 
-**Could your AI be misused, and how would you prevent that?** Its main misuse risk is being mistaken for a real recommendation engine and used to make claims about actual listener taste or music popularity, when it only reflects a tiny 18-song catalog and synthetic training labels. The model card's "Don't use this for real users" warning (Section 2) and this document's disclosure of its synthetic training data are the main safeguards, since the code itself has no way to prevent someone from misrepresenting its outputs.
+**Could your AI be misused, and how would you prevent that?** Because the scoring model is small and fully transparent, its weights are easy to reverse-engineer — someone could tag a song's genre/mood/acoustic fields to maximize its score rather than to honestly describe it, the same way content gets written to game a search ranking instead of earning it. Preventing this would require validating catalog metadata against an independent signal (the audio itself, or listener feedback) before it reaches the scorer, since the model can't tell an honest label from a gamed one.
 
 **What surprised you while testing your AI's reliability?** It was very reliable at listening and following directions, though you needed to be very specific and specify wherever you could, and also use exclusives, telling it what not to do as well.
 
