@@ -56,6 +56,8 @@ A shared `src/logging_setup.py` module feeds console logging into both the train
 
    The trained model artifact (`models/taste_match_model.joblib`) is already committed, so this works immediately — no training step required. It prints ranked recommendations for six user profiles (three typical tastes, three deliberately adversarial edge cases) straight to the console, with logging interleaved.
 
+   Pass `--songs <path>` to score against a different catalog CSV instead of the default `data/songs.csv` (e.g. `--songs data/songs_augmented_demo.csv`, the augmented catalog used in the [genre-balance demo](#before-after-does-adding-more-catalog-songs-fix-the-genre-filter-bubble) below). Pass `--model real` to score with the real-feedback-trained model instead of the default synthetic one (see [Optional: Train on Real Feedback](#optional-train-on-real-feedback-instead-of-synthetic-labels)).
+
 5. **(Optional) Retrain the model**, e.g. after editing `data/songs.csv`:
 
    ```bash
@@ -228,7 +230,7 @@ Under the *original* formula, any `target_energy` above `1.0` made `abs(song.ene
 
 ## Before/After: Does Adding More Catalog Songs Fix the Genre Filter Bubble?
 
-`model_card.md` documents a real bias: 13 of 15 genres have only 1 song, so a fan of an under-represented genre (e.g. rock) gets one real match and four compromises. This tests whether adding more songs to that genre actually fixes it — **using the exact same trained model, with no retraining** — by running the same rock-taste profile against the original catalog and a copy with 4 extra rock songs appended (`data/songs_augmented_demo.csv`).
+`model_card.md` documents a real bias: 13 of 15 genres have only 1 song, so a fan of an under-represented genre (e.g. rock) gets one real match and four compromises. This tests whether adding more songs to that genre actually fixes it — **using the exact same trained model, with no retraining** — by running the same rock-taste profile against the original catalog and a completely different 22-song catalog with better rock representation (`data/songs_augmented_demo.csv`, 5 rock songs among all-new titles/artists).
 
 ```bash
 $ python -m src.demo_genre_balance
@@ -250,19 +252,19 @@ BEFORE: original catalog (1 rock song)
 
 AFTER: augmented catalog (5 rock songs), same trained model
 ========================================
-1. Storm Runner by Voltline (rock) - Score: 4.45
-   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.47)
-2. Iron Tide by Granite Choir (rock) - Score: 4.42
+1. Wreckage Anthem by Cinder Wolf (rock) - Score: 4.42
    Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.44)
-3. Concrete Skyline by Riot Static (rock) - Score: 3.39
+2. Rust Belt Riot by Steel Choir (rock) - Score: 4.42
+   Because: genre similarity 1.00 (~+1.99), mood similarity 1.00 (~+0.99), energy closeness (~+1.44)
+3. Highway Fracture by Amber Static (rock) - Score: 3.39
    Because: genre similarity 1.00 (~+1.99), mood similarity 0.06 (~+0.06), energy closeness (~+1.35)
-4. Gravel Anthem by Voltline (rock) - Score: 3.23
-   Because: genre similarity 1.00 (~+1.99), mood similarity 0.04 (~+0.04), energy closeness (~+1.20)
-5. Broken Amplifier by Rust Parade (rock) - Score: 2.89
-   Because: genre similarity 1.00 (~+1.99), energy closeness (~+0.90)
+4. Broken Radio by The Hollow Kings (rock) - Score: 3.19
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.20)
+5. Splinter Drive by Vantage Point (rock) - Score: 3.01
+   Because: genre similarity 1.00 (~+1.99), energy closeness (~+1.02)
 ```
 
-**Before**, only 1 of the top 5 songs is actually rock — the rest are filler that merely shares energy or mood. **After** adding 4 more rock songs to the catalog, all 5 top picks are rock, each correctly ranked by how well its mood and energy also match (an "intense" near-perfect match at #1–2, then progressively looser mood matches at #3–5). Nothing about `src/model.py` or `models/taste_match_model.joblib` changed between these two runs — the TF-IDF vectorizer and Ridge regressor are identical. This confirms the genre-skew bias documented in `model_card.md` is a **data** problem, not a **model** problem: the trained model already generalizes correctly to new songs of a genre it's seen before, it just can't recommend rock songs that don't exist in the catalog.
+**Before**, only 1 of the top 5 songs is actually rock — the rest are filler that merely shares energy or mood. **After** swapping in a completely different 22-song catalog that happens to have 5 rock songs instead of 1, all 5 top picks are rock, each correctly ranked by how well its mood and energy also match (an "intense" near-perfect match at #1–2, then progressively looser mood matches at #3–5). Nothing about `src/model.py` or `models/taste_match_model.joblib` changed between these two runs — the TF-IDF vectorizer and Ridge regressor are identical, and none of the songs are shared between the two catalogs. This confirms the genre-skew bias documented in `model_card.md` is a **data** problem, not a **model** problem: the trained model already generalizes correctly to rock songs it's never seen before, it just can't recommend rock songs that don't exist in whichever catalog it's given.
 
 ---
 

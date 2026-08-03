@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
         help="Which trained model to score with (default: synthetic). "
         "'real' requires running `python -m src.train_model_real` first.",
     )
+    parser.add_argument(
+        "--songs",
+        default="data/songs.csv",
+        help="Path to the song catalog CSV to load (default: data/songs.csv).",
+    )
     return parser.parse_args()
 
 
@@ -47,7 +52,7 @@ def main() -> None:
                 REAL_MODEL_PATH,
             )
 
-    songs = load_songs("data/songs.csv")
+    songs = load_songs(args.songs)
 
     user_profiles = {
         # Distinct, "normal" taste profiles

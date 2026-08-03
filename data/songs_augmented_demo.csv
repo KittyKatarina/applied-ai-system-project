@@ -1,0 +1,23 @@
+id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness
+1,Wreckage Anthem,Cinder Wolf,rock,intense,0.92,150,0.45,0.65,0.08
+2,Rust Belt Riot,Steel Choir,rock,intense,0.88,146,0.50,0.62,0.10
+3,Highway Fracture,Amber Static,rock,aggressive,0.85,148,0.40,0.68,0.09
+4,Broken Radio,The Hollow Kings,rock,gritty,0.80,138,0.42,0.60,0.15
+5,Splinter Drive,Vantage Point,rock,moody,0.74,132,0.38,0.55,0.20
+6,Paper Boats,Wilder Hue,folk,dreamy,0.40,82,0.65,0.50,0.85
+7,Glass Orchard,Quiet Static,ambient,calm,0.22,58,0.60,0.35,0.93
+8,Velocity Bloom,Cassette Youth,pop,upbeat,0.80,120,0.82,0.83,0.15
+9,Marble Sky,Echo Basin,jazz,relaxed,0.35,88,0.68,0.50,0.87
+10,Copper Wire,Midnight Vale,synthwave,moody,0.72,108,0.50,0.70,0.20
+11,Paper Lantern Parade,Salt & Bloom,indie folk,nostalgic,0.46,78,0.75,0.52,0.80
+12,Neon Fable,Drift Harbor,electronic,energetic,0.86,126,0.68,0.90,0.10
+13,Slow Bloom,Feather Row,lofi,chill,0.38,76,0.58,0.58,0.80
+14,Wildflower Radio,Coastal Kin,country,hopeful,0.55,110,0.72,0.65,0.60
+15,Golden Static,The Paper Room,disco,triumphant,0.82,124,0.80,0.88,0.12
+16,Low Tide Dreaming,Hazel Moon,reggaeton,lonely,0.60,94,0.44,0.72,0.30
+17,Second Sunrise,Ivory Wren,classical,nostalgic,0.30,94,0.66,0.32,0.94
+18,Static Bloom,Rally Point,hip hop,confident,0.76,102,0.70,0.84,0.14
+19,Harborlight Hymn,Faded Atlas,folk,wistful,0.42,80,0.70,0.48,0.82
+20,Chrome Meridian,Vale Runner,synthwave,intense,0.78,116,0.46,0.75,0.18
+21,Afterglow Static,Petal Iron,pop,happy,0.84,122,0.85,0.80,0.16
+22,Winter Static,Quiet Fracture,ambient,melancholy,0.26,62,0.55,0.38,0.90
